@@ -114,6 +114,7 @@ var (
 )
 
 func (daemon *Daemon) startIngressWorker() {
+	logrus.Debugf("XXXXXXXXX startIngressWorker XXXXXXXXXX")
 	ingressJobsChannel = make(chan *ingressJob, 100)
 	go func() {
 		for {
@@ -121,7 +122,10 @@ func (daemon *Daemon) startIngressWorker() {
 			case r := <-ingressJobsChannel:
 				if r.create != nil {
 					daemon.setupIngress(r.create, r.ip, ingressID)
-					ingressID = r.create.ID
+					//TODO: fix ingress id.
+					if r.create.Ingress {
+						ingressID = r.create.ID
+					}
 				} else {
 					daemon.releaseIngress(ingressID)
 					ingressID = ""
@@ -142,6 +146,8 @@ func (daemon *Daemon) enqueueIngressJob(job *ingressJob) {
 // SetupIngress setups ingress networking.
 // The function returns a channel which will signal the caller when the programming is completed.
 func (daemon *Daemon) SetupIngress(create clustertypes.NetworkCreateRequest, nodeIP string) (<-chan struct{}, error) {
+	logrus.Debugf("XXXXXXXXX SetupIngress XXXXXXXXXX")
+	logrus.Debugf("SetupIngress: %v %v", nodeIP, create)
 	ip, _, err := net.ParseCIDR(nodeIP)
 	if err != nil {
 		return nil, err
@@ -160,10 +166,11 @@ func (daemon *Daemon) ReleaseIngress() (<-chan struct{}, error) {
 }
 
 func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip net.IP, staleID string) {
+	logrus.Debugf("XXXXXXXXX setupIngress %v %v XXXXXXXXXX", ip, create)
 	controller := daemon.netController
 	controller.AgentInitWait()
 
-	if staleID != "" && staleID != create.ID {
+	if staleID != "" && staleID != create.ID && create.Ingress {
 		daemon.releaseIngress(staleID)
 	}
 
@@ -171,7 +178,7 @@ func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip
 		// If it is any other error other than already
 		// exists error log error and return.
 		if _, ok := err.(libnetwork.NetworkNameError); !ok {
-			logrus.Errorf("Failed creating ingress network: %v", err)
+			logrus.Errorf("Failed creating %s network: %v", create.Name, err)
 			return
 		}
 		// Otherwise continue down the call to create or recreate sandbox.
@@ -179,18 +186,24 @@ func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip
 
 	n, err := daemon.GetNetworkByID(create.ID)
 	if err != nil {
-		logrus.Errorf("Failed getting ingress network by id after creating: %v", err)
+		logrus.Errorf("Failed getting %s network by id after creating: %v", create.Name, err)
 	}
 
-	sb, err := controller.NewSandbox("ingress-sbox", libnetwork.OptionIngress())
+	var sb libnetwork.Sandbox
+	if create.Ingress {
+		sb, err = controller.NewSandbox(create.Name+"-sbox", libnetwork.OptionIngress())
+	} else {
+		sb, err = controller.NewSandbox(create.Name + "-sbox")
+	}
 	if err != nil {
 		if _, ok := err.(networktypes.ForbiddenError); !ok {
 			logrus.Errorf("Failed creating ingress sandbox: %v", err)
 		}
+		logrus.Debugf("XXXXXXXXX DONE setupIngress %v XXXXXXXXXX", err)
 		return
 	}
 
-	ep, err := n.CreateEndpoint("ingress-endpoint", libnetwork.CreateOptionIpam(ip, nil, nil, nil))
+	ep, err := n.CreateEndpoint(create.Name+"-endpoint", libnetwork.CreateOptionIpam(ip, nil, nil, nil))
 	if err != nil {
 		logrus.Errorf("Failed creating ingress endpoint: %v", err)
 		return
@@ -204,6 +217,7 @@ func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip
 	if err := sb.EnableService(); err != nil {
 		logrus.Errorf("Failed enabling service for ingress sandbox")
 	}
+	logrus.Debugf("XXXXXXXXX DONE setupIngress XXXXXXXXXX")
 }
 
 func (daemon *Daemon) releaseIngress(id string) {

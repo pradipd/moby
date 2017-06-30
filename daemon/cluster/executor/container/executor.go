@@ -124,6 +124,10 @@ func (e *executor) Describe(ctx context.Context) (*api.NodeDescription, error) {
 }
 
 func (e *executor) Configure(ctx context.Context, node *api.Node) error {
+	logrus.Debugf("==== CREATING INGRESS NETWORK ====")
+	logrus.Debugf("%v", node.Attachment)
+	logrus.Debugf("%+v", node.Attachment)
+	logrus.Debugf("%#v", node.Attachment)
 	na := node.Attachment
 	if na == nil {
 		e.backend.ReleaseIngress()
@@ -139,6 +143,7 @@ func (e *executor) Configure(ctx context.Context, node *api.Node) error {
 		Ingress:        true,
 		CheckDuplicate: true,
 	}
+	logrus.Debugf("options: %v", options)
 
 	for _, ic := range na.Network.IPAM.Configs {
 		c := network.IPAMConfig{
@@ -148,7 +153,7 @@ func (e *executor) Configure(ctx context.Context, node *api.Node) error {
 		}
 		options.IPAM.Config = append(options.IPAM.Config, c)
 	}
-
+	logrus.Debugf("options: %v", options)
 	_, err := e.backend.SetupIngress(clustertypes.NetworkCreateRequest{
 		ID: na.Network.ID,
 		NetworkCreateRequest: types.NetworkCreateRequest{
@@ -156,6 +161,47 @@ func (e *executor) Configure(ctx context.Context, node *api.Node) error {
 			NetworkCreate: options,
 		},
 	}, na.Addresses[0])
+	logrus.Debugf("options: %v", options)
+
+	//Setup other networks.
+	logrus.Debugf("====Printing node attachemnts====")
+
+	for nid, aa := range node.LbAttachments {
+		logrus.Debugf("Node attachemnt %s %v", nid, aa.Addresses[0])
+		logrus.Debugf("%v", aa)
+		if nid == na.Network.ID {
+			logrus.Debugf("skipping %v", nid)
+			continue
+		}
+		options := types.NetworkCreate{
+			Driver: aa.Network.DriverState.Name,
+			IPAM: &network.IPAM{
+				Driver: aa.Network.IPAM.Driver.Name,
+			},
+			Options:        aa.Network.DriverState.Options,
+			Ingress:        false,
+			CheckDuplicate: true,
+		}
+		logrus.Debugf("options: %v", options)
+		for _, ic := range aa.Network.IPAM.Configs {
+			c := network.IPAMConfig{
+				Subnet:  ic.Subnet,
+				IPRange: ic.Range,
+				Gateway: ic.Gateway,
+			}
+			options.IPAM.Config = append(options.IPAM.Config, c)
+		}
+		logrus.Debugf("options: %v", options)
+		_, err := e.backend.SetupIngress(clustertypes.NetworkCreateRequest{
+			ID: aa.Network.ID,
+			NetworkCreateRequest: types.NetworkCreateRequest{
+				Name:          aa.Network.Spec.Annotations.Name,
+				NetworkCreate: options,
+			},
+		}, aa.Addresses[0])
+		logrus.Debugf("err: %v", err)
+		//return err
+	}
 
 	return err
 }

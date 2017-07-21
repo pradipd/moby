@@ -126,6 +126,14 @@ func (e *executor) Describe(ctx context.Context) (*api.NodeDescription, error) {
 }
 
 func (e *executor) Configure(ctx context.Context, node *api.Node) error {
+
+	logrus.Debugf("==== CREATING INGRESS NETWORK ====")
+	logrus.Debugf("%+v", node.Attachment)
+
+	for nid, aa := range node.LbAttachments {
+		logrus.Debugf("Node attachemnt: %s %+v", nid, aa.Addresses[0])
+	}
+
 	na := node.Attachment
 	if na == nil {
 		e.backend.ReleaseIngress()
@@ -158,6 +166,45 @@ func (e *executor) Configure(ctx context.Context, node *api.Node) error {
 			NetworkCreate: options,
 		},
 	}, na.Addresses[0])
+
+	//Setup other networks.
+	for nid, aa := range node.LbAttachments {
+		logrus.Debugf("===== CREATING LB attachment %s %+v %+v", nid, aa.Addresses[0], aa)
+		if nid == na.Network.ID {
+			logrus.Debugf("****skipping %v", nid)
+			continue
+		}
+
+		options := types.NetworkCreate{
+			Driver: aa.Network.DriverState.Name,
+			IPAM: &network.IPAM{
+				Driver: aa.Network.IPAM.Driver.Name,
+			},
+			Options:        aa.Network.DriverState.Options,
+			Ingress:        false,
+			CheckDuplicate: true,
+		}
+
+		for _, ic := range aa.Network.IPAM.Configs {
+			c := network.IPAMConfig{
+				Subnet:  ic.Subnet,
+				IPRange: ic.Range,
+				Gateway: ic.Gateway,
+			}
+			options.IPAM.Config = append(options.IPAM.Config, c)
+		}
+
+		_, err = e.backend.SetupIngress(clustertypes.NetworkCreateRequest{
+			ID: aa.Network.ID,
+			NetworkCreateRequest: types.NetworkCreateRequest{
+				Name:          aa.Network.Spec.Annotations.Name,
+				NetworkCreate: options,
+			},
+		}, aa.Addresses[0])
+
+		//TODO: stop on first err.
+		logrus.Debugf("err: %v", err)
+	}
 
 	return err
 }

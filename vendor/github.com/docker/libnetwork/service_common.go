@@ -221,6 +221,7 @@ func (c *controller) cleanupServiceBindings(cleanupNID string) {
 }
 
 func (c *controller) addServiceBinding(svcName, svcID, nID, eID, containerName string, vip net.IP, ingressPorts []*PortConfig, serviceAliases, taskAliases []string, ip net.IP, method string) error {
+	logrus.Debugf("****%v, %v, %v, %v, %v, %v, %v, %v, %v, %v, %v****", svcName, svcID, nID, eID, containerName, vip, ingressPorts, serviceAliases, taskAliases, ip, method)
 	var addService bool
 
 	n, err := c.NetworkByID(nID)
@@ -287,7 +288,7 @@ func (c *controller) addServiceBinding(svcName, svcID, nID, eID, containerName s
 	// Add loadbalancer service and backend in all sandboxes in
 	// the network only if vip is valid.
 	if len(vip) != 0 {
-		n.(*network).addLBBackend(ip, vip, lb.fwMark, ingressPorts)
+		n.(*network).addLBBackend(ip, vip, lb, ingressPorts)
 	}
 
 	// Add the appropriate name resolutions

@@ -137,6 +137,7 @@ func AddLoadBalancer(endpoints []HNSEndpoint, isILB bool, vip string, protocol u
 	policylist := &PolicyList{}
 
 	elbPolicy := &ELBPolicy{
+		//TODO: add source VIP's.
 		VIPs: []string{vip},
 		ILB:  isILB,
 	}
@@ -154,7 +155,7 @@ func AddLoadBalancer(endpoints []HNSEndpoint, isILB bool, vip string, protocol u
 		return nil, err
 	}
 
-	policylist.Policies[0] = string(jsonString)
+	policylist.Policies = append(policylist.Policies, string(jsonString))
 	return policylist.Create()
 }
 

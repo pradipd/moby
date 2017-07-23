@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/Microsoft/hcsshim"
 	"github.com/docker/libnetwork/common"
 )
 
@@ -87,6 +88,7 @@ type loadBalancer struct {
 	// network. It is keyed with endpoint ID.
 	backEnds map[string]net.IP
 
+	policyList *hcsshim.PolicyList
 	// Back pointer to service to which the loadbalancer belongs.
 	service *service
 }

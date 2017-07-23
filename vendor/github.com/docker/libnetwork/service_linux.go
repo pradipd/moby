@@ -111,7 +111,7 @@ func (sb *sandbox) populateLoadbalancers(ep *endpoint) {
 
 // Add loadbalancer backend to all sandboxes which has a connection to
 // this network. If needed add the service as well.
-func (n *network) addLBBackend(ip, vip net.IP, fwMark uint32, ingressPorts []*PortConfig) {
+func (n *network) addLBBackend(ip, vip net.IP, lb *loadBalancer, ingressPorts []*PortConfig) {
 	n.WalkEndpoints(func(e Endpoint) bool {
 		ep := e.(*endpoint)
 		if sb, ok := ep.getSandbox(); ok {
@@ -124,7 +124,7 @@ func (n *network) addLBBackend(ip, vip net.IP, fwMark uint32, ingressPorts []*Po
 				gwIP = ep.Iface().Address().IP
 			}
 
-			sb.addLBBackend(ip, vip, fwMark, ingressPorts, ep.Iface().Address(), gwIP, n.ingress)
+			sb.addLBBackend(ip, vip, lb.fwMark, ingressPorts, ep.Iface().Address(), gwIP, n.ingress)
 		}
 
 		return false

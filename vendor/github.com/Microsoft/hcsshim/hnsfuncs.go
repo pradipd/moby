@@ -12,13 +12,15 @@ func hnsCall(method, path, request string, returnResponse interface{}) error {
 	logrus.Debugf("[%s]=>[%s] Request : %s", method, path, request)
 
 	err := _hnsCall(method, path, request, &responseBuffer)
+	logrus.Debugf("HNS: [%v]", err)
 	if err != nil {
 		return makeError(err, "hnsCall ", "")
 	}
 	response := convertAndFreeCoTaskMemString(responseBuffer)
-
+	logrus.Debugf("HNS: response:%v", response)
 	hnsresponse := &hnsResponse{}
 	if err = json.Unmarshal([]byte(response), &hnsresponse); err != nil {
+		logrus.Debugf("HNS: failed to unmarshall err:%v", err)
 		return err
 	}
 
@@ -27,6 +29,7 @@ func hnsCall(method, path, request string, returnResponse interface{}) error {
 	}
 
 	if len(hnsresponse.Output) == 0 {
+		logrus.Debugf("HNS: response.output == 0")
 		return nil
 	}
 

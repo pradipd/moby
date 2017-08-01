@@ -7,84 +7,119 @@ import (
 	"github.com/Sirupsen/logrus"
 )
 
+type policyLists struct {
+	ilb *hcsshim.PolicyList
+	elb *hcsshim.PolicyList
+}
+
+var lbPolicylistMap map[*loadBalancer]*policyLists
+
+func init() {
+	lbPolicylistMap = make(map[*loadBalancer]*policyLists)
+}
+
 func (n *network) addLBBackend(ip, vip net.IP, lb *loadBalancer, ingressPorts []*PortConfig) {
-	logrus.Debugf("Adding lb backend %v %v portconfig %v", ip, vip, ingressPorts)
-	// n.WalkEndpoints(func(e Endpoint) bool {
-	// 	ep := e.(*endpoint)
-	// 	if sb, ok := ep.getSandbox(); ok {
-	// 		if !sb.isEndpointPopulated(ep) {
-	// 			return false
-	// 		}
+	logrus.Debugf("Adding lb backend: %v %v portconfig:%v lb:%+v", ip, vip, ingressPorts, lb)
 
-	// 		var gwIP net.IP
-	// 		if ep := sb.getGatewayEndpoint(); ep != nil {
-	// 			gwIP = ep.Iface().Address().IP
-	// 		}
-
-	// 		sb.addLBBackend(ip, vip, fwMark, ingressPorts, ep.Iface().Address(), gwIP, n.ingress)
-	// 	}
-
-	// 	return false
-	// })
-
-	var epList []string
-
-	for eid, _ := range lb.backEnds {
-		ep, err := n.EndpointByID(eid)
-		if err != nil {
-			continue
-		}
-		data, err := ep.DriverInfo()
-		if err != nil {
-			continue
-		}
-
-		if data["hnsid"] != nil {
-			epList = append(epList, data["hnsid"].(string))
+	var sourceVIP string
+	for _, e := range n.Endpoints() {
+		logrus.Debugf("****addLbBackend: endpointID: %v %v %+v*****", e.ID(), e.Name(), e)
+		if e.Name() == "ingress-endpoint" {
+			sourceVIP = e.Info().Iface().Address().IP.String()
 		}
 	}
+	logrus.Debugf("****addLbBackend: sourceVIP: %v *****", sourceVIP)
 
-	if lb.policyList != nil {
-		lb.policyList.Delete()
-		lb.policyList = nil
+	var endpoints []hcsshim.HNSEndpoint
+
+	for eid := range lb.backEnds {
+		//Call HNS to get back ID (GUID) corresponding to the endpoint.
+		hnsEndpoint, err := hcsshim.GetHNSEndpointByName(eid)
+		logrus.Debugf("****addLbBackend: GetHNSEndpointByName: %v %v %v*****", eid, hnsEndpoint, err)
+		if err != nil {
+			logrus.Debugf("****addLbBackend: Could not find HNS ID for endpoint %v. err: %v", eid, err)
+			return
+		}
+
+		endpoints = append(endpoints, *hnsEndpoint)
 	}
 
-	var elbPolicies []hcsshim.ELBPolicy
+	if policies, ok := lbPolicylistMap[lb]; ok {
+
+		if policies.ilb != nil {
+			policies.ilb.Delete()
+			policies.ilb = nil
+		}
+
+		if policies.elb != nil {
+			policies.elb.Delete()
+			policies.elb = nil
+		}
+		delete(lbPolicylistMap, lb)
+	}
+
+	//ILBPolicyList, err := hcsshim.AddLoadBalancer(endpoints, true, sourceVIP, vip.String(), 0, uint16(port.TargetPort), uint16(port.PublishedPort))
+	ilbPolicy, err := hcsshim.AddLoadBalancer(endpoints, true, sourceVIP, vip.String(), 0, 0, 0)
+	if err != nil {
+		//TODO: add more details.
+		logrus.Debugf("****addLbBackend: Failed to ilb policy. err: %v", err)
+	}
+
+	lbPolicylistMap[lb] = &policyLists{
+		ilb: ilbPolicy,
+	}
 
 	for _, port := range ingressPorts {
 
-		elbPolicy := hcsshim.ELBPolicy{
-			VIPs: []string{vip.String()},
-			ILB:  true,
+		logrus.Debugf("****addLbBackend: %v, %v, %v, %v  *****", endpoints, sourceVIP, vip, port)
+
+		lbPolicylistMap[lb].elb, err = hcsshim.AddLoadBalancer(endpoints, false, sourceVIP, "", 0, uint16(port.TargetPort), uint16(port.PublishedPort))
+		if err != nil {
+			//TODO: add more details.
+			logrus.Debugf("****addLbBackend: Failed to elb policy. err: %v", err)
+			//TODO: how to clean up ILB policy ?????
+			return
 		}
 
-		elbPolicy.Type = hcsshim.ExternalLoadBalancer
-		elbPolicy.InternalPort = uint16(port.PublishedPort)
-		elbPolicy.ExternalPort = uint16(port.TargetPort)
-
-		elbPolicies = append(elbPolicies, elbPolicy)
+		logrus.Debugf("****addLbBackend DONE: %v *****", lb)
 	}
 
-	if len(epList) > 0 {
-		//What is protocol????
-		//TODO: How do I get the hnsendpoint????
-		endpoint := hcsshim.HNSEndpoint{
-			Id: epList[0],
-		}
-		var endpoints []hcsshim.HNSEndpoint
-		endpoints = append(endpoints, endpoint)
+	//TODO: validate ILB only.  i.e. not ingress ports.
+	//TODO: test multiple ports
+	//TODO: Test multiple services.
 
-		logrus.Debugf("****addLbBackend: %v, %v, %v *****", endpoints, vip, elbPolicies)
-		lb.policyList, _ = hcsshim.AddLoadBalancer(endpoints, true, vip.String(), 0, elbPolicies[0].InternalPort, elbPolicies[0].ExternalPort)
-	}
 }
 
-func (n *network) rmLBBackend(ip, vip net.IP, fwMark uint32, ingressPorts []*PortConfig, rmService bool) {
-	logrus.Debugf("Removing lb backend %v %v", ip, vip)
+func (n *network) rmLBBackend(ip, vip net.IP, lb *loadBalancer, ingressPorts []*PortConfig, rmService bool) {
+	logrus.Debugf("rmLBBackend: Removing lb backend %v %v", ip, vip)
+
+	if len(lb.backEnds) > 0 {
+		//Reprogram VFP with the existing backends.
+		logrus.Debugf("rmLBBackend: Reprogramming VFP for service %s (ID:%s VIP:%s).", lb.service.name, lb.service.id, lb.vip.String())
+		n.addLBBackend(ip, vip, lb, ingressPorts)
+	} else {
+		logrus.Debugf("rmLBBackend: No more backends for %s (ID:%s VIP:%s), removing all policies", lb.service.name, lb.service.id, lb.vip.String())
+
+		if policyLists, ok := lbPolicylistMap[lb]; ok {
+			if policyLists.ilb != nil {
+				policyLists.ilb.Delete()
+				policyLists.ilb = nil
+			}
+
+			if policyLists.elb != nil {
+				policyLists.elb.Delete()
+				policyLists.elb = nil
+			}
+			delete(lbPolicylistMap, lb)
+
+		} else {
+			logrus.Debugf("rmLBBackend: XXXXXX Could not find policy list for %s %s %s", lb.service.name, lb.service.id, lb.vip.String())
+			//TODO: handle this.
+		}
+	}
 }
 
 func (sb *sandbox) populateLoadbalancers(ep *endpoint) {
-	logrus.Debugf("Populating lb for ep %v %v", ep)
 }
 
 func arrangeIngressFilterRule() {

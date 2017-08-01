@@ -356,7 +356,7 @@ func (c *controller) rmServiceBinding(svcName, svcID, nID, eID, containerName st
 	// Remove loadbalancer service(if needed) and backend in all
 	// sandboxes in the network only if the vip is valid.
 	if len(vip) != 0 && entries == 0 {
-		n.(*network).rmLBBackend(ip, vip, lb.fwMark, ingressPorts, rmService)
+		n.(*network).rmLBBackend(ip, vip, lb, ingressPorts, rmService)
 	}
 
 	// Delete the name resolutions

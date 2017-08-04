@@ -121,10 +121,7 @@ func (daemon *Daemon) startIngressWorker() {
 			case r := <-ingressJobsChannel:
 				if r.create != nil {
 					daemon.setupIngress(r.create, r.ip, ingressID)
-					//TODO: how do we fix ingress id on release.
-					if r.create.Ingress {
-						ingressID = r.create.ID
-					}
+					ingressID = r.create.ID
 				} else {
 					daemon.releaseIngress(ingressID)
 					ingressID = ""
@@ -163,12 +160,10 @@ func (daemon *Daemon) ReleaseIngress() (<-chan struct{}, error) {
 }
 
 func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip net.IP, staleID string) {
-	logrus.Debugf("%s:XXXXXXXXX setupIngress %v %v XXXXXXXXXX", create.Name, ip, create)
-
 	controller := daemon.netController
 	controller.AgentInitWait()
 
-	if staleID != "" && staleID != create.ID && create.Ingress {
+	if staleID != "" && staleID != create.ID {
 		daemon.releaseIngress(staleID)
 	}
 
@@ -176,7 +171,7 @@ func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip
 		// If it is any other error other than already
 		// exists error log error and return.
 		if _, ok := err.(libnetwork.NetworkNameError); !ok {
-			logrus.Errorf("Failed creating %s network: %v", create.Name, err)
+			logrus.Errorf("Failed creating ingress network: %v", err)
 			return
 		}
 		// Otherwise continue down the call to create or recreate sandbox.
@@ -184,42 +179,31 @@ func (daemon *Daemon) setupIngress(create *clustertypes.NetworkCreateRequest, ip
 
 	n, err := daemon.GetNetworkByID(create.ID)
 	if err != nil {
-		logrus.Errorf("Failed getting %s network by id after creating: %v", create.Name, err)
+		logrus.Errorf("Failed getting ingress network by id after creating: %v", err)
 	}
 
-	var sb libnetwork.Sandbox
-	if create.Ingress {
-		sb, err = controller.NewSandbox(create.Name+"-sbox", libnetwork.OptionIngress())
-	} else {
-		//TODO: Add OptionLBXXXXX() here.
-		sb, err = controller.NewSandbox(create.Name + "-sbox")
-	}
-
+	sb, err := controller.NewSandbox("ingress-sbox", libnetwork.OptionIngress())
 	if err != nil {
 		if _, ok := err.(networktypes.ForbiddenError); !ok {
-			logrus.Errorf("Failed creating %s sandbox: %v", create.Name, err)
+			logrus.Errorf("Failed creating ingress sandbox: %v", err)
 		}
-		logrus.Debugf("%s: XXXXXXXXX DONE setupIngress %v XXXXXXXXXX", create.Name, err)
 		return
 	}
 
-	ep, err := n.CreateEndpoint(create.Name+"-endpoint", libnetwork.CreateOptionIpam(ip, nil, nil, nil))
+	ep, err := n.CreateEndpoint("ingress-endpoint", libnetwork.CreateOptionIpam(ip, nil, nil, nil))
 	if err != nil {
-		logrus.Errorf("Failed creating %s endpoint: %v", create.Name, err)
+		logrus.Errorf("Failed creating ingress endpoint: %v", err)
 		return
 	}
 
 	if err := ep.Join(sb, nil); err != nil {
-		logrus.Errorf("Failed joining %s sandbox to ingress endpoint: %v", create.Name, err)
+		logrus.Errorf("Failed joining ingress sandbox to ingress endpoint: %v", err)
 		return
 	}
 
 	if err := sb.EnableService(); err != nil {
-		logrus.Errorf("Failed enabling service for %s sandbox", create.Name)
+		logrus.Errorf("Failed enabling service for ingress sandbox")
 	}
-
-	logrus.Debugf("%s: XXXXXXXXX DONE setupIngress XXXXXXXXXX", create.Name)
-
 }
 
 func (daemon *Daemon) releaseIngress(id string) {
@@ -250,6 +234,30 @@ func (daemon *Daemon) releaseIngress(id string) {
 		return
 	}
 	return
+}
+
+var nodeIPForNetworkMap = make(map[string]net.IP)
+
+//AddLBAttachments set the networkToHostIP table.
+func (daemon *Daemon) AddLBAttachments(lbAttachments map[string]string) error {
+
+	//TODO: How do we handle changed data?  I.e. what if a node's IP has changed.  This should be an error case.
+
+	for nid, nodeIP := range lbAttachments {
+
+		ip, _, err := net.ParseCIDR(nodeIP)
+		if err != nil {
+			//TODO: How should we handle errors?  For now just reset the map on error.
+			nodeIPForNetworkMap = make(map[string]net.IP)
+			return err
+		}
+
+		nodeIPForNetworkMap[nid] = ip
+	}
+
+	//TODO: Do we need to clean this up when leaving cluster?
+
+	return nil
 }
 
 // SetNetworkBootstrapKeys sets the bootstrap keys.
@@ -301,6 +309,9 @@ func (daemon *Daemon) CreateNetwork(create types.NetworkCreateRequest) (*types.N
 }
 
 func (daemon *Daemon) createNetwork(create types.NetworkCreateRequest, id string, agent bool) (*types.NetworkCreateResponse, error) {
+
+	logrus.Debugf("****createNetwork: %s %s %v", create.Name, id, agent)
+
 	if runconfig.IsPreDefinedNetwork(create.Name) && !agent {
 		err := fmt.Errorf("%s is a pre-defined network and cannot be created", create.Name)
 		return nil, apierrors.NewRequestForbiddenError(err)
@@ -375,6 +386,51 @@ func (daemon *Daemon) createNetwork(create types.NetworkCreateRequest, id string
 		daemon.pluginRefCount(create.IPAM.Driver, ipamapi.PluginEndpointType, plugingetter.Acquire)
 	}
 	daemon.LogNetworkEvent(n, "create")
+
+	if agent && create.Name != "ingress" {
+		//TODO: Do all networks hit thispath or only overlay networks????
+
+		var sb libnetwork.Sandbox
+
+		sandboxName := create.Name + "-sbox"
+		sb, err := c.SandboxByID(sandboxName)
+		if err != nil {
+			//TODO: is that the right error ?????
+			if _, ok := err.(networktypes.NotFoundError); !ok {
+				logrus.Debugf("%s: XXXXXXXXX Failed to get Sandbox ID for: sandboxName", sandboxName)
+				return nil, err
+			}
+		}
+		//TODO: Can the sandbox already exist??????
+
+		sb, err = c.NewSandbox(create.Name + "-sbox")
+
+		if err != nil {
+			if _, ok := err.(networktypes.ForbiddenError); !ok {
+				logrus.Errorf("Failed creating %s sandbox: %v", create.Name, err)
+			}
+			logrus.Debugf("%s: XXXXXXXXX Failed creating %s sandbox: %v", create.Name, create.Name, err)
+			return nil, err
+		}
+
+		nodeIP := nodeIPForNetworkMap[id]
+		ep, err := n.CreateEndpoint(create.Name+"-endpoint", libnetwork.CreateOptionIpam(nodeIP, nil, nil, nil))
+		if err != nil {
+			logrus.Errorf("Failed creating %s endpoint: %v", create.Name, err)
+			return nil, err
+		}
+
+		if err := ep.Join(sb, nil); err != nil {
+			logrus.Errorf("Failed joining %s sandbox to ingress endpoint: %v", create.Name, err)
+			return nil, err
+		}
+
+		if err := sb.EnableService(); err != nil {
+			logrus.Errorf("Failed enabling service for %s sandbox", create.Name)
+		}
+
+		logrus.Debugf("%s: XXXXXXXXX DONE setupIngress XXXXXXXXXX", create.Name)
+	}
 
 	return &types.NetworkCreateResponse{
 		ID:      n.ID(),
@@ -533,7 +589,30 @@ func (daemon *Daemon) deleteNetwork(networkID string, dynamic bool) error {
 		return apierrors.NewRequestForbiddenError(err)
 	}
 
+	logrus.Debugf("*****Deleting network %s.  It has %d endpoints", nw.Name(), len(nw.Endpoints()))
+
+	//don't delete ingress.....
+	//If network has 1 ep and it is the host ep, delete it.
+	endpoints := nw.Endpoints()
+	if len(endpoints) == 1 {
+		sandboxName := nw.Name() + "-sbox"
+		endpoint := endpoints[0]
+		endpointInfo := endpoint.Info()
+		sandbox := endpointInfo.Sandbox()
+
+		logrus.Debugf("Sandbox: containerID:%s ID:%s", sandbox.ContainerID(), sandbox.ID())
+		//TODO: how do we determin ingress-sbox from other overlay networks?
+		if sandbox.ContainerID() == sandboxName && sandbox.ContainerID() != "ingress-sbox" {
+			controller := daemon.netController
+			if err := controller.SandboxDestroy(sandboxName); err != nil {
+				logrus.Errorf("Failed to delete %s sandbox: %v", sandboxName, err)
+				return err
+			}
+		}
+	}
+
 	if err := nw.Delete(); err != nil {
+		logrus.Debugf("Failed to delete network: %T, %v", err, err)
 		return err
 	}
 

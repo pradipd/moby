@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"runtime/debug"
 
 	"github.com/Sirupsen/logrus"
 )
@@ -37,7 +38,7 @@ type HNSNetwork struct {
 	DNSServerList        string            `json:",omitempty"`
 	DNSServerCompartment uint32            `json:",omitempty"`
 	ManagementIP         string            `json:",omitempty"`
-	AutomaticDNS         bool              `json:",omitempty"`  
+	AutomaticDNS         bool              `json:",omitempty"`
 }
 
 type hnsNetworkResponse struct {
@@ -54,6 +55,9 @@ type hnsResponse struct {
 
 // HNSNetworkRequest makes a call into HNS to update/query a single network
 func HNSNetworkRequest(method, path, request string) (*HNSNetwork, error) {
+	if method == "POST" || method == "DELETE" {
+		debug.PrintStack()
+	}
 	var network HNSNetwork
 	err := hnsCall(method, "/networks/"+path, request, &network)
 	if err != nil {

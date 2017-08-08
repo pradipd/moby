@@ -625,9 +625,9 @@ func (ep *endpoint) addServiceInfoToCluster(sb *sandbox) error {
 	if ep.svcID != "" {
 		// This is a task part of a service
 		// Gossip ingress ports only in ingress network.
-		if n.ingress {
-			ingressPorts = ep.ingressPorts
-		}
+		//if n.ingress {
+		ingressPorts = ep.ingressPorts
+		//}
 		if err := c.addServiceBinding(ep.svcName, ep.svcID, n.ID(), ep.ID(), name, ep.virtualIP, ingressPorts, ep.svcAliases, ep.myAliases, ep.Iface().Address().IP, "addServiceInfoToCluster"); err != nil {
 			return err
 		}

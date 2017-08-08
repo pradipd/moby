@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"runtime/debug"
 
 	"github.com/Sirupsen/logrus"
 )
@@ -53,6 +54,9 @@ type EndpointResquestResponse struct {
 
 // HNSEndpointRequest makes a HNS call to modify/query a network endpoint
 func HNSEndpointRequest(method, path, request string) (*HNSEndpoint, error) {
+	if method == "POST" {
+		debug.PrintStack()
+	}
 	endpoint := &HNSEndpoint{}
 	err := hnsCall(method, "/endpoints/"+path, request, &endpoint)
 	if err != nil {

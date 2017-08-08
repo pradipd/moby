@@ -1043,9 +1043,11 @@ func (ep *endpoint) assignAddress(ipam ipamapi.Ipam, assignIPv4, assignIPv6 bool
 	}
 
 	logrus.Debugf("Assigning addresses for endpoint %s's interface on network %s", ep.Name(), n.Name())
+	logrus.Debugf("****assignAddress: endpoint %s network: %s assignIPv4: %v assignIPv6: %v", ep.Name(), n.Name(), assignIPv4, assignIPv6)
 
 	if assignIPv4 {
 		if err = ep.assignAddressVersion(4, ipam); err != nil {
+			logrus.Debugf("******Failed to assign ipv4 address: %v", err)
 			return err
 		}
 	}
@@ -1054,6 +1056,10 @@ func (ep *endpoint) assignAddress(ipam ipamapi.Ipam, assignIPv4, assignIPv6 bool
 		err = ep.assignAddressVersion(6, ipam)
 	}
 
+	if err != nil {
+		logrus.Debugf("******Failed to assign ipv6 address: %v", err)
+	}
+	logrus.Debugf("******LEAVING assignAddress: endpoint %s network: %s assignIPv4: %v assignIPv6: %v", ep.Name(), n.Name(), assignIPv4, assignIPv6)
 	return err
 }
 

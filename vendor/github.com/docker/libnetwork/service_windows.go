@@ -2,6 +2,7 @@ package libnetwork
 
 import (
 	"net"
+	"runtime/debug"
 
 	"github.com/Microsoft/hcsshim"
 	"github.com/Sirupsen/logrus"
@@ -20,11 +21,12 @@ func init() {
 
 func (n *network) addLBBackend(ip, vip net.IP, lb *loadBalancer, ingressPorts []*PortConfig) {
 	logrus.Debugf("Adding lb backend: %v %v portconfig:%v lb:%+v", ip, vip, ingressPorts, lb)
-
+	debug.PrintStack()
 	var sourceVIP string
+	//TODO: Find a better way to determine source VIP???? Get sanbox?
 	for _, e := range n.Endpoints() {
 		logrus.Debugf("****addLbBackend: endpointID: %v %v %+v*****", e.ID(), e.Name(), e)
-		if e.Name() == "ingress-endpoint" {
+		if e.Name() == n.Name()+"-endpoint" {
 			sourceVIP = e.Info().Iface().Address().IP.String()
 		}
 	}

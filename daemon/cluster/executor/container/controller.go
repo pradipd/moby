@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	executorpkg "github.com/docker/docker/daemon/cluster/executor"
@@ -98,10 +99,12 @@ func (r *controller) Prepare(ctx context.Context) error {
 		return err
 	}
 
+	logrus.Debugf("****START:Creating network for ctx: %v", ctx)
 	// Make sure all the networks that the task needs are created.
 	if err := r.adapter.createNetworks(ctx); err != nil {
 		return err
 	}
+	logrus.Debugf("****DONE:Creating network for ctx: %v", ctx)
 
 	// Make sure all the volumes that the task needs are created.
 	if err := r.adapter.createVolumes(ctx); err != nil {

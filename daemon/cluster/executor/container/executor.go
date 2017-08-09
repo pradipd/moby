@@ -128,9 +128,11 @@ func (e *executor) Describe(ctx context.Context) (*api.NodeDescription, error) {
 }
 
 func (e *executor) Configure(ctx context.Context, node *api.Node) error {
+
 	na := node.Attachment
 	if na == nil {
 		e.backend.ReleaseIngress()
+		e.backend.ClearLBAttachments()
 		return nil
 	}
 
@@ -160,6 +162,14 @@ func (e *executor) Configure(ctx context.Context, node *api.Node) error {
 			NetworkCreate: options,
 		},
 	}, na.Addresses[0])
+
+	lbAttachments := make(map[string]string)
+
+	for nid, aa := range node.LbAttachments {
+		lbAttachments[nid] = aa.Addresses[0]
+	}
+
+	err = e.backend.AddLBAttachments(lbAttachments)
 
 	return err
 }

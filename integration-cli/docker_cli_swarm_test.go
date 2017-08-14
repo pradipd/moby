@@ -2228,3 +2228,34 @@ func (s *DockerSwarmSuite) TestSwarmClusterEventsConfig(c *check.C) {
 	// filtered by config
 	waitForEvent(c, d, t1, "-f type=config", "config remove "+id, defaultRetryCount)
 }
+
+func (s *DockerSwarmSuite) TestSwarmLBSandbox(c *check.C) {
+	d := s.AddDaemon(c, true, true)
+
+	// Create a new overlay network
+	out, err := d.Cmd("network", "create", "-d", "overlay", "new-overlay")
+	c.Assert(err, checker.IsNil, check.Commentf(out))
+
+	// Create a service
+	out, err = d.Cmd("service", "create", "--no-resolve-image", "--name", "srv1", "--network", "new-overlay", "busybox", "top")
+	c.Assert(err, checker.IsNil, check.Commentf(out))
+
+	// make sure task has been deployed.
+	waitAndAssert(c, defaultReconciliationTimeout, d.CheckActiveContainerCount, checker.Equals, 1)
+
+	// Validate the LB sandbox exists.
+	out, err = d.Cmd("network", "inspect", "--format='{{range $k,$v:=.Containers}}{{if eq $k \"new-overlay-sbox\"}}{{$k}}{{end}}{{end}}'", "new-overlay")
+	c.Assert(err, checker.IsNil, check.Commentf(out))
+	c.Assert(strings.TrimSpace(out), checker.Equals, "'new-overlay-sbox'")
+
+	// Remove service
+	out, err = d.Cmd("service", "rm", "srv1")
+	c.Assert(err, checker.IsNil)
+
+	// Make sure container has been destroyed.
+	waitAndAssert(c, defaultReconciliationTimeout, d.CheckActiveContainerCount, checker.Equals, 0)
+
+	// Remove network
+	out, err = d.Cmd("network", "rm", "new-overlay")
+	c.Assert(err, checker.IsNil, check.Commentf(out))
+}

@@ -572,20 +572,24 @@ func (daemon *Daemon) deleteNetwork(networkID string, dynamic bool) error {
 		return apierrors.NewRequestForbiddenError(err)
 	}
 
-	if !nw.Info().Ingress() {
+	if !nw.Info().Ingress() && nw.Type() == "overlay" {
 
 		controller := daemon.netController
-		sandboxName := nw.Name() + "-sbox"
 
-		if err := controller.SandboxDestroy(sandboxName); err != nil {
-			logrus.Errorf("Failed to delete %s sandbox: %v", sandboxName, err)
-			return err
-		}
+		//The only endpoint left should be the LB endpoint (nw.Name() + "-endpoint")
+		endpoints := nw.Endpoints()
+		if len(endpoints) == 1 {
 
-		for _, ep := range nw.Endpoints() {
-			if err := ep.Delete(true); err != nil {
-				logrus.Errorf("Failed to delete endpoint %s (%s) in %s: %v", ep.Name(), ep.ID(), sandboxName, err)
-				return err
+			sandboxName := nw.Name() + "-sbox"
+
+			if err := endpoints[0].Delete(true); err != nil {
+				logrus.Errorf("Failed to delete endpoint %s (%s) in %s: %v", endpoints[0].Name(), endpoints[0].ID(), sandboxName, err)
+				//Ignore error and attempt to delete the sandbox.
+			}
+
+			if err := controller.SandboxDestroy(sandboxName); err != nil {
+				logrus.Errorf("Failed to delete %s sandbox: %v", sandboxName, err)
+				//Ignore error and attempt to delete the network.
 			}
 		}
 	}

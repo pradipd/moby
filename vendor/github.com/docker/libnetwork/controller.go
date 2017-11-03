@@ -837,8 +837,22 @@ addToStore:
 	if err = c.updateToStore(network); err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			if e := c.deleteFromStore(network); e != nil {
+				logrus.Warnf("could not rollback from store, network %v on failure (%v): %v", network, err, e)
+			}
+		}
+	}()
+
 	if network.configOnly {
 		return network, nil
+	}
+
+	if len(network.loadBalancerIP) != 0 {
+		if err = network.createLoadBalancerSandbox(); err != nil {
+			return nil, err
+		}
 	}
 
 	joinCluster(network)
@@ -952,6 +966,28 @@ func (c *controller) addNetwork(n *network) error {
 	return nil
 }
 
+func (c *controller) dumpNetworkConfig() {
+	logrus.Debugf("*** Dumping all active networks, sandboxes, and endpoints")
+	c.WalkNetworks(func(n Network) bool {
+		logrus.Debugf("*** Network: %s", n.Name())
+		n.WalkEndpoints(func(e Endpoint) bool {
+			logrus.Debugf("\t*** Endpoint: %s", e.Name())
+			return false
+		})
+		return false
+	})
+
+	c.WalkSandboxes(func(s Sandbox) bool {
+		logrus.Debugf("*** Sandbox: %s %s", s.ID(), s.ContainerID())
+		endpoints := s.Endpoints()
+		for _, e := range endpoints {
+			logrus.Debugf("\t*** Endpoint: %s", e.Name())
+		}
+		return false
+	})
+	logrus.Debugf("*** DONE Dumping all active networks, sandboxes, and endpoints")
+}
+
 func (c *controller) Networks() []Network {
 	var list []Network
 
@@ -966,6 +1002,23 @@ func (c *controller) Networks() []Network {
 		}
 		list = append(list, n)
 	}
+
+	for _, n := range networks {
+		logrus.Debugf("*** Network: %s %s", n.Name(), n.ID())
+		endpoints := n.Endpoints()
+		for _, e := range endpoints {
+			logrus.Debugf("\t*** Endpoint: %s %s", e.Name(), e.ID())
+		}
+	}
+
+	c.WalkSandboxes(func(s Sandbox) bool {
+		logrus.Debugf("*** Sandbox: %s %s", s.ID(), s.ContainerID())
+		endpoints := s.Endpoints()
+		for _, e := range endpoints {
+			logrus.Debugf("\t*** Endpoint: %s %s", e.Name(), e.ID())
+		}
+		return false
+	})
 
 	return list
 }

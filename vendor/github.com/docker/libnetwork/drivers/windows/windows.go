@@ -234,9 +234,8 @@ func (d *driver) parseNetworkOptions(id string, genericOptions map[string]string
 }
 
 func (c *networkConfiguration) processIPAM(id string, ipamV4Data, ipamV6Data []driverapi.IPAMData) error {
-	if len(ipamV6Data) > 0 {
-		return types.ForbiddenErrorf("windowsshim driver doesn't support v6 subnets")
-	}
+	logrus.Debugf("XXXX: v4:%v", ipamV4Data)
+	logrus.Debugf("XXXX: v6:%v", ipamV6Data)
 
 	if len(ipamV4Data) == 0 {
 		return types.BadRequestErrorf("network %s requires ipv4 configuration", id)
@@ -270,6 +269,7 @@ func (d *driver) createNetwork(config *networkConfiguration) error {
 
 // Create a new network
 func (d *driver) CreateNetwork(id string, option map[string]interface{}, nInfo driverapi.NetworkInfo, ipV4Data, ipV6Data []driverapi.IPAMData) error {
+	logrus.Debugf("XXXXXXXXXXX ipv6Data: %v", ipV6Data)
 	if _, err := d.getNetwork(id); err == nil {
 		return types.ForbiddenErrorf("network %s exists", id)
 	}
@@ -303,6 +303,18 @@ func (d *driver) CreateNetwork(id string, option map[string]interface{}, nInfo d
 		subnets := []hcsshim.Subnet{}
 
 		for _, ipData := range ipV4Data {
+			subnet := hcsshim.Subnet{
+				AddressPrefix: ipData.Pool.String(),
+			}
+
+			if ipData.Gateway != nil {
+				subnet.GatewayAddress = ipData.Gateway.IP.String()
+			}
+
+			subnets = append(subnets, subnet)
+		}
+
+		for _, ipData := range ipV6Data {
 			subnet := hcsshim.Subnet{
 				AddressPrefix: ipData.Pool.String(),
 			}

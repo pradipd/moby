@@ -726,7 +726,10 @@ func buildIpamResources(r *types.NetworkResource, nwInfo libnetwork.NetworkInfo)
 			}
 			iData := network.IPAMConfig{}
 			iData.Subnet = ip6Info.IPAMData.Pool.String()
-			iData.Gateway = ip6Info.IPAMData.Gateway.String()
+			logrus.Debugf("XXXX Why is this needed XXXX")
+			if ip6Info.IPAMData.Gateway != nil { 
+				iData.Gateway = ip6Info.IPAMData.Gateway.String() 
+			}
 			r.IPAM.Config = append(r.IPAM.Config, iData)
 		}
 	}

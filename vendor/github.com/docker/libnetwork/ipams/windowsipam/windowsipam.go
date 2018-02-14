@@ -39,7 +39,7 @@ func (a *allocator) GetDefaultAddressSpaces() (string, string, error) {
 // subnet user asked and does not validate anything. Doesn't support subpool allocation
 func (a *allocator) RequestPool(addressSpace, pool, subPool string, options map[string]string, v6 bool) (string, *net.IPNet, map[string]string, error) {
 	logrus.Debugf("RequestPool(%s, %s, %s, %v, %t)", addressSpace, pool, subPool, options, v6)
-	if subPool != "" || v6 {
+	if subPool != "" {
 		return "", nil, nil, types.InternalErrorf("This request is not supported by null ipam driver")
 	}
 

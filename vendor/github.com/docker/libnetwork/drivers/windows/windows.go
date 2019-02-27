@@ -463,6 +463,10 @@ func ConvertPortBindings(portBindings []types.PortBinding) ([]json.RawMessage, e
 			return nil, fmt.Errorf("Windows does not support host IP addresses in NAT settings")
 		}
 
+		if (elem.HostPort == 0) && (elem.Port != 0) {
+			elem.HostPort = elem.Port
+		}
+
 		encodedPolicy, err := json.Marshal(hcsshim.NatPolicy{
 			Type:         "NAT",
 			ExternalPort: elem.HostPort,

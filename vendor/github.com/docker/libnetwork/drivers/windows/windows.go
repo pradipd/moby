@@ -372,6 +372,31 @@ func (d *driver) CreateNetwork(id string, option map[string]interface{}, nInfo d
 		config.HnsID = hnsresponse.Id
 		genData[HNSID] = config.HnsID
 
+		defer func() {
+			if err != nil {
+				//TODO: validate this works correctly.
+				d.DeleteNetwork(config.HnsID)
+			}
+		}()
+
+		hnsIPv4Data := make([]driverapi.IPAMData, len(hnsresponse.Subnets))
+		hnsIPv6Data := make([]driverapi.IPAMData, 0)
+		for i, subnet := range hnsresponse.Subnets {
+			_, gwIP, err := net.ParseCIDR(subnet.AddressPrefix)
+			if err != nil {
+				return err
+			}
+
+			hnsIPv4Data[i].Gateway = gwIP
+			_, subnetIP, err := net.ParseCIDR(subnet.AddressPrefix)
+			if err != nil {
+				return err
+			}
+			hnsIPv4Data[i].Pool = subnetIP
+		}
+
+		nInfo.UpdateIpamConfig(hnsIPv4Data, hnsIPv6Data)
+
 	} else {
 		// Delete any stale HNS endpoints for this network.
 		if endpoints, err := hcsshim.HNSListEndpointRequest(); err == nil {
@@ -436,7 +461,7 @@ func convertQosPolicies(qosPolicies []types.QosPolicy) ([]json.RawMessage, error
 	// understood by the HCS.
 	for _, elem := range qosPolicies {
 		encodedPolicy, err := json.Marshal(hcsshim.QosPolicy{
-			Type:                            "QOS",
+			Type: "QOS",
 			MaximumOutgoingBandwidthInBytes: elem.MaxEgressBandwidth,
 		})
 

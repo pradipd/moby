@@ -24,6 +24,7 @@ package plugins // import "github.com/docker/docker/pkg/plugins"
 
 import (
 	"errors"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -201,6 +202,7 @@ func load(name string) (*Plugin, error) {
 }
 
 func loadWithRetry(name string, retry bool) (*Plugin, error) {
+	debug.PrintStack()
 	registry := newLocalRegistry()
 	start := time.Now()
 

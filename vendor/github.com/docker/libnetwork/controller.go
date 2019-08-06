@@ -980,6 +980,7 @@ func (c *controller) reservePools() {
 }
 
 func doReplayPoolReserve(n *network) bool {
+	logrus.Debugf("XXXXX %v", n.ipamType)
 	_, caps, err := n.getController().getIPAMDriver(n.ipamType)
 	if err != nil {
 		logrus.Warnf("Failed to retrieve ipam driver for network %q (%s): %v", n.Name(), n.ID(), err)

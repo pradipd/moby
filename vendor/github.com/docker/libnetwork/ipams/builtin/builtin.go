@@ -1,4 +1,4 @@
-// +build windows
+// +build linux freebsd darwin windows
 
 package builtin
 
@@ -9,8 +9,6 @@ import (
 	"github.com/docker/libnetwork/ipam"
 	"github.com/docker/libnetwork/ipamapi"
 	"github.com/docker/libnetwork/ipamutils"
-
-	windowsipam "github.com/docker/libnetwork/ipams/windowsipam"
 )
 
 var (
@@ -18,8 +16,8 @@ var (
 	defaultAddressPool []*ipamutils.NetworkToSplit
 )
 
-// InitDockerDefault registers the built-in ipam service with libnetwork
-func InitDockerDefault(ic ipamapi.Callback, l, g interface{}) error {
+// Init registers the built-in ipam service with libnetwork
+func Init(ic ipamapi.Callback, l, g interface{}) error {
 	var (
 		ok                bool
 		localDs, globalDs datastore.DataStore
@@ -37,7 +35,7 @@ func InitDockerDefault(ic ipamapi.Callback, l, g interface{}) error {
 		}
 	}
 
-	ipamutils.ConfigLocalScopeDefaultNetworks(nil)
+	ipamutils.ConfigLocalScopeDefaultNetworks(GetDefaultIPAddressPool())
 
 	a, err := ipam.NewAllocator(localDs, globalDs)
 	if err != nil {
@@ -49,24 +47,12 @@ func InitDockerDefault(ic ipamapi.Callback, l, g interface{}) error {
 	return ic.RegisterIpamDriverWithCapabilities(ipamapi.DefaultIPAM, a, cps)
 }
 
-// Init registers the built-in ipam service with libnetwork
-func Init(ic ipamapi.Callback, l, g interface{}) error {
-	initFunc := windowsipam.GetInit(windowsipam.DefaultIPAM)
-
-	err := InitDockerDefault(ic, l, g)
-	if err != nil {
-		return err
-	}
-
-	return initFunc(ic, l, g)
-}
-
-// SetDefaultIPAddressPool stores default address pool .
+// SetDefaultIPAddressPool stores default address pool.
 func SetDefaultIPAddressPool(addressPool []*ipamutils.NetworkToSplit) {
 	defaultAddressPool = addressPool
 }
 
-// GetDefaultIPAddressPool returns default address pool .
+// GetDefaultIPAddressPool returns default address pool.
 func GetDefaultIPAddressPool() []*ipamutils.NetworkToSplit {
 	return defaultAddressPool
 }
